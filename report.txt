@@ -1,0 +1,31 @@
+CS660 Project Assignment XX Report
+
+######################################################################################################
+
+Name1: [Your full name]
+UID1: [UID]
+
+No Collaboration/
+Name2: [Your colloborator's full name]
+UID2: [UID]
+
+######################################################################################################
+=====================================================================================
+1. Describe any design decisions you made. [Please refer to the lab website for detailed requirements here.]
+
+=====================================================================================
+2. Discuss and justify any changes you made to the API.
+
+=====================================================================================
+3. Describe any missing or incomplete elements of your code.
+
+=====================================================================================
+4. Describe how long you spent on the assignment, and whether there was anything you found particularly difficult or confusing.
+
+=====================================================================================
+5. If you collaborate with someone else, you have to discribe how you split the workload.
+
+
+=====================================================================================
+######################################################################################################
+
