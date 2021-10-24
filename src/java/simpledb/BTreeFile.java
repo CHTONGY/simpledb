@@ -99,11 +99,14 @@ public class BTreeFile implements DbFile {
 			}
 			else {
 				byte pageBuf[] = new byte[BufferPool.getPageSize()];
-				if (bis.skip(BTreeRootPtrPage.getPageSize() + (id.pageNumber()-1) * BufferPool.getPageSize()) != 
+				// bis.skip() return the actual number of bytes skipped
+				if (bis.skip(BTreeRootPtrPage.getPageSize() + (id.pageNumber()-1) * BufferPool.getPageSize()) !=
 						BTreeRootPtrPage.getPageSize() + (id.pageNumber()-1) * BufferPool.getPageSize()) {
 					throw new IllegalArgumentException(
 							"Unable to seek to correct place in BTreeFile");
 				}
+				// when doing this, bis has already skip
+				// bis.read() return the number of bytes read
 				int retval = bis.read(pageBuf, 0, BufferPool.getPageSize());
 				if (retval == -1) {
 					throw new IllegalArgumentException("Read past end of table");
@@ -183,7 +186,7 @@ public class BTreeFile implements DbFile {
 	 * leaf node with permission perm.
 	 * 
 	 * If f is null, it finds the left-most leaf page -- used for the iterator
-	 * 
+	 *
 	 * @param tid - the transaction id
 	 * @param dirtypages - the list of dirty pages which should be updated with all new dirty pages
 	 * @param pid - the current page being searched
@@ -196,7 +199,37 @@ public class BTreeFile implements DbFile {
 			Field f) 
 					throws DbException, TransactionAbortedException {
 		// some code goes here
-        return null;
+		// base case
+		if(pid.pgcateg() == BTreePageId.LEAF) {
+			return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
+		}
+		// else, current page is BTreeInternalPage
+		// we should iterate over all BTreeEntry to find Field equals to f
+		BTreeInternalPage curPage = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
+		// handle f == null
+		if(f == null) {
+			// find the left most page
+			return findLeafPage(tid, dirtypages, curPage.getChildId(0), perm, f);
+		}
+
+		// find the biggest entry whose field is smaller than f
+		BTreeEntry curEntry = null;
+		for (Iterator<BTreeEntry> it = curPage.iterator(); it.hasNext(); ) {
+			curEntry = it.next();
+			if(curEntry.getKey().compare(Op.GREATER_THAN_OR_EQ, f)) {
+				// because we want to find the left most page, so we should stop when curEntry.f >= f
+				break;
+			}
+		}
+
+		if(curEntry.getKey().compare(Op.LESS_THAN, f)) {
+			// 1. if curEntry.f < f, then recurse curEntry.right
+			return findLeafPage(tid, dirtypages, curEntry.getRightChild(), perm, f);
+		} else {
+			// 2. if curEntry.f >= f, then recurse curEntry.left
+			return findLeafPage(tid, dirtypages, curEntry.getLeftChild(), perm, f);
+		}
+
 	}
 	
 	/**

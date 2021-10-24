@@ -19,8 +19,6 @@ public class SeqScan implements DbIterator {
     private boolean isOpen; // for iterator
     private DbFileIterator innerIterator;
 
-    private List<Page> pagesList;
-
     /**
      * Creates a sequential scan over the specified table as a part of the
      * specified transaction.
@@ -40,19 +38,11 @@ public class SeqScan implements DbIterator {
     public SeqScan(TransactionId tid, int tableId, String tableAlias) {
         // some code goes here
         this.tid = tid;
-        this.tableId = tableId;
+         this.tableId = tableId;
         this.dbFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
         this.tableAlias = tableAlias;
         this.isOpen = false;
         this.innerIterator = this.dbFile.iterator(tid);
-        this.pagesList = new ArrayList<>();
-        for(int i = 0; i < this.dbFile.numPages(); i++) {
-            try {
-                pagesList.add(Database.getBufferPool().getPage(tid, new HeapPageId(tableId, i), Permissions.READ_ONLY));
-            } catch (TransactionAbortedException | DbException e) {
-                e.printStackTrace();
-            }
-        }
     }
 
     /**
