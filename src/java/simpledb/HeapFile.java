@@ -135,8 +135,9 @@ public class HeapFile implements DbFile {
     }
 
     private class HeapFileIterator implements DbFileIterator {
-        private List<HeapPage> pagesList;
         private TransactionId tid;
+        private int pagesNum;
+        private int tableId;
 
         private int curIndex;
         private Iterator<Tuple> curIter;
@@ -144,30 +145,13 @@ public class HeapFile implements DbFile {
         private boolean isOpen;
 
         public HeapFileIterator(int tableId, int pagesNum, TransactionId tid) {
-            this.pagesList = new ArrayList<>();
+            this.pagesNum = pagesNum;
             this.tid = tid;
-            for(int i = 0; i < pagesNum; i++) {
-                HeapPage curPage = null;
-
-                try {
-                    if((curPage = (HeapPage) Database.getBufferPool().getPage(this.tid, new HeapPageId(tableId, i), Permissions.READ_ONLY)) != null) {
-                        this.pagesList.add(curPage);
-                    }
-                } catch (TransactionAbortedException e) {
-                    e.printStackTrace();
-                } catch (DbException e) {
-                    e.printStackTrace();
-                }
-                if(curPage == null) {
-                    curPage = (HeapPage) Database.getCatalog().getDatabaseFile(tableId).readPage(new HeapPageId(tableId, i));
-                    this.pagesList.add(curPage);
-                }
-
-            }
-            this.tid = tid;
+            this.tableId = tableId;
             this.curIndex = 0;
-            this.curIter = this.pagesList.get(0).iterator();
             this.isOpen = false;
+            HeapPage curPage = getPage(this.curIndex);
+            this.curIter = curPage.iterator();
         }
 
         @Override
@@ -180,7 +164,7 @@ public class HeapFile implements DbFile {
             if(!this.isOpen) {
                 return false;
             }
-            return this.curIter.hasNext() || (this.curIndex < this.pagesList.size() - 1);
+            return this.curIter.hasNext() || (this.curIndex < this.pagesNum - 1);
         }
 
         @Override
@@ -189,11 +173,17 @@ public class HeapFile implements DbFile {
                 throw new NoSuchElementException("iterator not open yet");
             }
             if(this.curIter.hasNext()) {
-                return this.curIter.next();
+                Tuple t = this.curIter.next();
+                // after iterate the last tuple in the last page, we should unpin the last page
+                if(this.curIndex == this.pagesNum-1 && !this.curIter.hasNext()) {
+                    Database.getBufferPool().unpinPage(new HeapPageId(this.tableId, this.curIndex));
+                }
+                return t;
             }
-            if(this.curIndex < this.pagesList.size() - 1) {
-                this.curIndex++;
-                this.curIter = this.pagesList.get(this.curIndex).iterator();
+            if(this.curIndex < this.pagesNum - 1) {
+                Database.getBufferPool().unpinPage(new HeapPageId(this.tableId, this.curIndex++));
+                HeapPage nxtPage = getPage(this.curIndex);
+                this.curIter = nxtPage.iterator();
                 return curIter.next();
             }
             throw new NoSuchElementException("no more element for next");
@@ -202,7 +192,8 @@ public class HeapFile implements DbFile {
         @Override
         public void rewind() throws DbException, TransactionAbortedException {
             this.curIndex = 0;
-            this.curIter = this.pagesList.get(this.curIndex).iterator();
+            HeapPage firstPage = getPage(this.curIndex);
+            this.curIter = firstPage.iterator();
         }
 
         @Override
@@ -210,8 +201,18 @@ public class HeapFile implements DbFile {
             this.isOpen = false;
         }
 
+        private HeapPage getPage(int pageNo) {
+            HeapPage curPage = null;
+            try {
+                curPage = (HeapPage) Database.getBufferPool().getPage(this.tid, new HeapPageId(this.tableId, pageNo), Permissions.READ_ONLY);
+            } catch (TransactionAbortedException e) {
+                e.printStackTrace();
+            } catch (DbException e) {
+                e.printStackTrace();
+            }
+            return curPage;
+        }
     }
-
 }
 
 

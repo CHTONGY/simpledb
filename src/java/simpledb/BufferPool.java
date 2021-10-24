@@ -1,9 +1,7 @@
 package simpledb;
 
 import java.io.*;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -30,11 +28,93 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+    private class Frame {
+        // frame id
+        private int frameID;
+        // page id
+        private PageId pageId;
+        // page
+        private Page page;
+        // pin_count
+        private int pinCount;
+        // as for dirty, we can use page.isDirty() to check
+        // the file that contains this page. use when flush
+        private DbFile file;
+
+
+        public Frame() {
+        }
+
+        public Frame(int frameID) {
+            this.frameID = frameID;
+        }
+
+        public Frame(int frameID, PageId pageId, Page page, int pinCount) {
+            this.frameID = frameID;
+            this.pageId = pageId;
+            this.page = page;
+            this.pinCount = pinCount;
+        }
+
+        public int getFrameID() {
+            return frameID;
+        }
+
+        public void setFrameID(int frameID) {
+            this.frameID = frameID;
+        }
+
+        public PageId getPageId() {
+            return pageId;
+        }
+
+        public void setPageId(PageId pageId) {
+            this.pageId = pageId;
+        }
+
+        public Page getPage() {
+            return page;
+        }
+
+        public void setPage(Page page) {
+            this.page = page;
+        }
+
+        public int getPinCount() {
+            return pinCount;
+        }
+
+        public void setPinCount(int pinCount) {
+            this.pinCount = pinCount;
+        }
+
+        public DbFile getFile() {
+            return file;
+        }
+
+        public void setFile(DbFile file) {
+            this.file = file;
+        }
+
+        public void pinCountAddOne() {
+            this.pinCount++;
+        }
+
+        public void pinCountMinusOne() {
+            // TODO: what if pinCount already equals to 0 before minus one?
+            this.pinCount--;
+        }
+    }
+
     private int numPages;
-    private Map<PageId, Page> idPageMap;
-    private ReadWriteLock rwLock;
-    private Lock rLock;
-    private Lock wLock;
+//    private Map<PageId, Page> idPageMap;
+    private Frame[] frames;
+    private List<Integer> unpinnedFrames;
+    private Map<PageId, Integer> pageIdFrameIdMap;
+//    private Map<TransactionId, List<Integer>> transactionIdFrameIdsMap;
+//    private ReadWriteLock rwLock;
+//    private Lock rLock;
+//    private Lock wLock;
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -43,10 +123,16 @@ public class BufferPool {
     public BufferPool(int numPages) {
         // some code goes here
         this.numPages = numPages;
-        this.idPageMap = new HashMap<>(this.numPages);
-        this.rwLock = new ReentrantReadWriteLock();
-        this.rLock = rwLock.readLock();
-        this.wLock = rwLock.writeLock();
+        this.frames = new Frame[numPages];
+        this.unpinnedFrames = new LinkedList<>();
+        this.pageIdFrameIdMap = new HashMap<>();
+//        this.transactionIdFrameIdsMap = new HashMap<>();
+        for(int i = 0; i < numPages; i++) {
+            // init Frame[] with empty frame object
+            this.frames[i] = new Frame(i);
+            // at first, each frame is unpinned
+            this.unpinnedFrames.add(i);        }
+
     }
     
     public static int getPageSize() {
@@ -81,23 +167,33 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        rLock.lock();
-        Page p = this.idPageMap.get(pid);
-        if(p != null) {
-            rLock.unlock();
-            return p;
+//        rLock.lock();
+        //if contains page id
+        if(this.pageIdFrameIdMap.containsKey(pid)) {
+            int frameID = this.pageIdFrameIdMap.get(pid);
+
+            // update pinCount
+            frames[frameID].pinCountAddOne();
+            return frames[frameID].getPage();
         }
-        // to check whether the buffer pool is full
-        while(this.idPageMap.size() >= this.numPages) {
-            // in later lab, change this to eviction algo
+        // page not in buffer pool
+        int unpinnedFrameId = this.unpinnedFrames.get(0);   // always get the first unpinned frame id
+        Frame frame = this.frames[unpinnedFrameId];
+
+        Page oldPage = frame.getPage();
+        if(oldPage != null) {
             evictPage();
-//            rLock.unlock();
-//            throw new DbException("Buffer Pool is full");
         }
-        // if not in Buffer Pool, read from catalog
-        p = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
-        this.idPageMap.put(pid, p);
-        rLock.unlock();
+        // read from catalog
+        DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+        Page p = file.readPage(pid);
+        frame.pageId = pid;
+        frame.page = p;
+        frame.file = file;
+        frame.pinCountAddOne();
+        this.pageIdFrameIdMap.put(pid, unpinnedFrameId);
+        this.unpinnedFrames.remove(0);    // dequeue from unpinned frames list
+        //        rLock.unlock();
         return p;
     }
 
@@ -194,9 +290,7 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
-        Iterator<PageId> iterator = this.idPageMap.keySet().iterator();
-        while(iterator.hasNext()) {
-            PageId pageId = iterator.next();
+        for(PageId pageId : this.pageIdFrameIdMap.keySet()) {
             flushPage(pageId);
         }
     }
@@ -212,7 +306,7 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         // not necessary for lab1
-        this.idPageMap.remove(pid);
+
     }
 
     /**
@@ -223,11 +317,17 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         // use pid to get table id -> find dbfile in catalog by tableid -> write dbfile
-        int tableId = pid.getTableId();
-        // file to be flush
-        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
-        Page dirtyPage = this.idPageMap.get(pid);
-        file.writePage(dirtyPage);
+        int frameId = this.pageIdFrameIdMap.get(pid);
+        Frame frame = this.frames[frameId];
+
+        Page dirtyPage = frame.page;
+        DbFile file = frame.file;
+
+        // page is dirty, then flush and set not dirty
+        if(dirtyPage.isDirty() != null) {
+            file.writePage(dirtyPage);
+            dirtyPage.markDirty(false, null);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -242,11 +342,39 @@ public class BufferPool {
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
+    private synchronized void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
-        // always evict the page that iterator first iterate
-        this.idPageMap.clear();
+        // evict with LRU policy
+        int unpinnedFramesId = this.unpinnedFrames.get(0);
+        Frame frame = this.frames[unpinnedFramesId];
+
+        // if page is dirty, flush the page
+        if(frame.getPage().isDirty() != null) {
+            try {
+                flushPage(this.frames[this.unpinnedFrames.get(0)].getPageId());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.pageIdFrameIdMap.remove(frame.pageId);
+
+        frame.page = null;
+        frame.pageId = null;
+        frame.file = null;
+    }
+
+    /** unpin a page when requestor has fulfilled the page*/
+    public void unpinPage(PageId pageId) {
+        if(this.pageIdFrameIdMap.containsKey(pageId)) {
+            int frameId = this.pageIdFrameIdMap.get(pageId);
+            Frame frame = this.frames[frameId];
+            frame.pinCountMinusOne();
+            if(frame.getPinCount() == 0) {
+                this.unpinnedFrames.add(frameId);
+            }
+        }
     }
 
 }
