@@ -2,7 +2,6 @@ package simpledb;
 
 import java.io.*;
 import java.util.*;
-import java.nio.channels.FileChannel;
 
 import simpledb.Predicate.Op;
 
@@ -199,20 +198,39 @@ public class BTreeFile implements DbFile {
 			Field f) 
 					throws DbException, TransactionAbortedException {
 		// some code goes here
+		BTreeLeafPage wantedPage = null;
 		// base case
 		if(pid.pgcateg() == BTreePageId.LEAF) {
-			return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
+			if(dirtypages.containsKey(pid)) {
+				// first try to use dirty pages
+				return (BTreeLeafPage) dirtypages.get(pid);
+			}
+			wantedPage = (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
+			dirtypages.put(wantedPage.getId(), wantedPage);
+//			unpinPage(wantedPage);
+			return wantedPage;
 		}
 		// else, current page is BTreeInternalPage
 		// we should iterate over all BTreeEntry to find Field equals to f
-		BTreeInternalPage curPage = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
+
+		BTreeInternalPage curPage = null;
+		if(dirtypages.containsKey(pid)) {
+			curPage = (BTreeInternalPage) dirtypages.get(pid);
+		} else {
+			curPage = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
+		}
+
 		// handle f == null
 		if(f == null) {
 			// find the left most page
-			return findLeafPage(tid, dirtypages, curPage.getChildId(0), perm, f);
+			BTreePageId leftMostChildPID = curPage.getChildId(0);
+			unpinPage(curPage);
+			wantedPage = findLeafPage(tid, dirtypages, leftMostChildPID, perm, f);
+			return wantedPage;
 		}
 
 		// find the biggest entry whose field is smaller than f
+		// TODO: use binary search to optimize
 		BTreeEntry curEntry = null;
 		for (Iterator<BTreeEntry> it = curPage.iterator(); it.hasNext(); ) {
 			curEntry = it.next();
@@ -222,14 +240,17 @@ public class BTreeFile implements DbFile {
 			}
 		}
 
+		unpinPage(curPage);
+
 		if(curEntry.getKey().compare(Op.LESS_THAN, f)) {
 			// 1. if curEntry.f < f, then recurse curEntry.right
-			return findLeafPage(tid, dirtypages, curEntry.getRightChild(), perm, f);
+			wantedPage = findLeafPage(tid, dirtypages, curEntry.getRightChild(), perm, f);
 		} else {
 			// 2. if curEntry.f >= f, then recurse curEntry.left
-			return findLeafPage(tid, dirtypages, curEntry.getLeftChild(), perm, f);
+			wantedPage = findLeafPage(tid, dirtypages, curEntry.getLeftChild(), perm, f);
 		}
-
+//		unpinPage(curPage);
+		return wantedPage;
 	}
 	
 	/**
@@ -281,8 +302,90 @@ public class BTreeFile implements DbFile {
 		// the new entry.  getParentWithEmtpySlots() will be useful here.  Don't forget to update
 		// the sibling pointers of all the affected leaf pages.  Return the page into which a 
 		// tuple with the given key field should be inserted.
-        return null;
-		
+
+		// create a total same new leaf page
+		BTreeLeafPage newPage = (BTreeLeafPage) getEmptyPage(tid, dirtypages, BTreePageId.LEAF);
+		BTreePageId newPageId = newPage.getId();
+
+		// set sibling
+		BTreePageId rightPageId = page.getRightSiblingId();
+		page.setRightSiblingId(newPageId);
+		newPage.setLeftSiblingId(page.getId());
+		newPage.setRightSiblingId(rightPageId);
+		if(rightPageId != null) {
+			BTreeLeafPage rightPage = null;
+			if(dirtypages.containsKey(rightPageId)) {
+				rightPage = (BTreeLeafPage) dirtypages.get(rightPageId);
+			} else {
+				rightPage = (BTreeLeafPage) getPage(tid, dirtypages, rightPageId, Permissions.READ_WRITE);
+			}
+			rightPage.setLeftSiblingId(newPageId);
+			rightPage.markDirty(true,tid);
+			dirtypages.put(rightPageId, rightPage);
+			unpinPage(rightPage);
+		}
+
+		// mark old page and new page as dirty
+		page.markDirty(true, tid);
+		newPage.markDirty(true, tid);
+		dirtypages.put(page.getId(), page);
+		dirtypages.put(newPageId, newPage);
+
+		// delete second half of element in old page
+		int halfTupleNum = page.getNumTuples() / 2;
+		Iterator<Tuple> reverseIt = page.reverseIterator();
+		List<Tuple> deletedTuple = new ArrayList<>(halfTupleNum);
+		for(int i = 0; i < halfTupleNum; i++) {
+			Tuple t = reverseIt.next();
+			deletedTuple.add(t);
+			page.deleteTuple(t);
+		}
+
+		// add deleted elements into new page
+		for(Tuple t : deletedTuple) {
+			newPage.insertTuple(t);
+		}
+
+		// choose first tuple in second list as index, decide which part should tuple insert into
+		Tuple firstTuple = newPage.iterator().next();
+		Field key = firstTuple.getField(this.keyField);
+		BTreeLeafPage retPage = newPage;
+		if(field.compare(Op.LESS_THAN, key)) {
+			// find in left part
+			retPage = page;
+		}
+
+		// set parent
+		BTreePageId parentId = page.getParentId();
+		BTreeInternalPage parentPage = getParentWithEmptySlots(tid, dirtypages, parentId, key);
+		parentId = parentPage.getId();	// update parentId, because previous parent might be BTreeRootPtr
+		// find smallest entry larger than field, update this entry's left child to newPage
+//		BTreeEntry smallestEntryLargerThanField = findSmallestEntryLargerThanField(parentPage, key);
+//		if(smallestEntryLargerThanField != null) {
+//			smallestEntryLargerThanField.setLeftChild(newPageId);
+//			parentPage.updateEntry(smallestEntryLargerThanField);
+//		}
+		// update parent
+		parentPage.insertEntry(new BTreeEntry(key, page.getId(), newPageId));
+		updateParentPointers(tid, dirtypages, parentPage);
+		parentPage.markDirty(true, tid);
+		dirtypages.put(parentId, parentPage);
+		unpinPage(parentPage);
+		if(retPage.equals(newPage)) {
+			unpinPage(page);
+		}
+        return retPage;
+	}
+
+	private BTreeEntry findSmallestEntryLargerThanField(BTreeInternalPage page, Field field) {
+		Iterator<BTreeEntry> iterator = page.iterator();
+		while(iterator.hasNext()) {
+			BTreeEntry entry = iterator.next();
+			if(entry.getKey().compare(Op.GREATER_THAN_OR_EQ, field)) {
+				return entry;
+			}
+		}
+		return null;
 	}
 	
 	/**
@@ -311,7 +414,75 @@ public class BTreeFile implements DbFile {
 			BTreeInternalPage page, Field field) 
 					throws DbException, IOException, TransactionAbortedException {
 		// some code goes here
-		return null;
+		BTreeInternalPage newPage = (BTreeInternalPage) getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
+		BTreePageId newPageId = newPage.getId();
+
+		// mark dirty
+		page.markDirty(true, tid);
+		newPage.markDirty(true, tid);
+		dirtypages.put(page.getId(), page);
+		dirtypages.put(newPageId, newPage);
+
+		// delete second half of entry in old page
+		int halfSize = page.getNumEntries() / 2;
+		Iterator<BTreeEntry> reverseIt = page.reverseIterator();
+		List<BTreeEntry> deletedEntries = new ArrayList<>(halfSize);
+		for(int i = 0; i < halfSize; i++) {
+			BTreeEntry entry = reverseIt.next();
+			deletedEntries.add(entry);
+			page.deleteKeyAndRightChild(entry);
+		}
+
+		// add deleted entries into new page
+		for(BTreeEntry entry : deletedEntries) {
+			newPage.insertEntry(entry);
+		}
+
+		// choose first entry in second page as pivot
+//		BTreeEntry putUpEntry = newPage.iterator().next();	// first entry of right page
+//		newPage.deleteKeyAndLeftChild(putUpEntry);
+//		Field key = putUpEntry.getKey();
+//		BTreeInternalPage retPage = newPage;
+//		if(field.compare(Op.LESS_THAN_OR_EQ, key)) {
+//			retPage = page;
+//		}
+
+		BTreeEntry putUpEntry = page.reverseIterator().next();	// last entry of left page
+		page.deleteKeyAndRightChild(putUpEntry);
+		Field key = putUpEntry.getKey();
+		BTreeInternalPage retPage = page;
+		if(field.compare(Op.GREATER_THAN_OR_EQ, key)) {
+			retPage = newPage;
+		}
+
+		updateParentPointers(tid, dirtypages, page);
+		updateParentPointers(tid, dirtypages, newPage);
+//		unpinPage(page);
+//		unpinPage(newPage);
+
+		// set parent
+		BTreePageId parentId = page.getParentId();
+		BTreeInternalPage parentPage = getParentWithEmptySlots(tid, dirtypages, parentId, key);
+		parentId = parentPage.getId();
+//		page.setParentId(parentId);
+//		newPage.setParentId(parentId);
+		// find smallest entry larger than field, update this entry's left child to newPage
+//		BTreeEntry smallestEntryLargerThanField = findSmallestEntryLargerThanField(parentPage, key);
+//		if(smallestEntryLargerThanField != null) {
+//			smallestEntryLargerThanField.setLeftChild(newPageId);
+//			parentPage.updateEntry(smallestEntryLargerThanField);
+//		}
+		// update parent
+		parentPage.insertEntry(new BTreeEntry(key, page.getId(), newPageId));
+		updateParentPointers(tid, dirtypages, parentPage);
+		parentPage.markDirty(true, tid);
+		dirtypages.put(parentId, parentPage);
+		unpinPage(parentPage);
+		if(retPage.equals(newPage)) {
+			unpinPage(page);
+		}
+
+		return retPage;
 	}
 	
 	/**
@@ -383,9 +554,12 @@ public class BTreeFile implements DbFile {
 		BTreePage p = (BTreePage) getPage(tid, dirtypages, child, Permissions.READ_ONLY);
 
 		if(!p.getParentId().equals(pid)) {
+			unpinPage(p);
 			p = (BTreePage) getPage(tid, dirtypages, child, Permissions.READ_WRITE);
 			p.setParentId(pid);
 		}
+
+		unpinPage(p);
 
 	}
 	
@@ -477,7 +651,7 @@ public class BTreeFile implements DbFile {
 		// and split the leaf page if there are no more slots available
 		BTreeLeafPage leafPage = findLeafPage(tid, dirtypages, rootId, Permissions.READ_WRITE, t.getField(keyField));
 		if(leafPage.getNumEmptySlots() == 0) {
-			leafPage = splitLeafPage(tid, dirtypages, leafPage, t.getField(keyField));	
+			leafPage = splitLeafPage(tid, dirtypages, leafPage, t.getField(keyField));
 		}
 
 		// insert the tuple into the leaf page
@@ -1091,6 +1265,10 @@ public class BTreeFile implements DbFile {
 		return new BTreeFileIterator(this, tid);
 	}
 
+	private void unpinPage(Page page) {
+		Database.getBufferPool().unpinPage(page);
+	}
+
 }
 
 /**
@@ -1138,6 +1316,9 @@ class BTreeFileIterator extends AbstractDbFileIterator {
 
 		while (it == null && curp != null) {
 			BTreePageId nextp = curp.getRightSiblingId();
+			// TODO: before get the right siblings, first unpin current page
+			Database.getBufferPool().unpinPage(this.curp);
+
 			if(nextp == null) {
 				curp = null;
 			}
@@ -1206,6 +1387,9 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 		BTreeRootPtrPage rootPtr = (BTreeRootPtrPage) Database.getBufferPool().getPage(
 				tid, BTreeRootPtrPage.getId(f.getId()), Permissions.READ_ONLY);
 		BTreePageId root = rootPtr.getRootId();
+
+		PageUtil.unpinPage(rootPtr);
+
 		if(ipred.getOp() == Op.EQUALS || ipred.getOp() == Op.GREATER_THAN 
 				|| ipred.getOp() == Op.GREATER_THAN_OR_EQ) {
 			curp = f.findLeafPage(tid, root, Permissions.READ_ONLY, ipred.getField());
@@ -1235,17 +1419,20 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 				else if(ipred.getOp() == Op.LESS_THAN || ipred.getOp() == Op.LESS_THAN_OR_EQ) {
 					// if the predicate was not satisfied and the operation is less than, we have
 					// hit the end
+					PageUtil.unpinPage(curp);
 					return null;
 				}
 				else if(ipred.getOp() == Op.EQUALS && 
 						t.getField(f.keyField()).compare(Op.GREATER_THAN, ipred.getField())) {
 					// if the tuple is now greater than the field passed in and the operation
 					// is equals, we have reached the end
+					PageUtil.unpinPage(curp);
 					return null;
 				}
 			}
 
 			BTreePageId nextp = curp.getRightSiblingId();
+			PageUtil.unpinPage(curp);
 			// if there are no more pages to the right, end the iteration
 			if(nextp == null) {
 				return null;
@@ -1256,7 +1443,7 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 				it = curp.iterator();
 			}
 		}
-
+		PageUtil.unpinPage(curp);
 		return null;
 	}
 
@@ -1274,5 +1461,11 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 	public void close() {
 		super.close();
 		it = null;
+	}
+}
+
+class PageUtil {
+	public static void unpinPage(Page page) {
+		Database.getBufferPool().unpinPage(page);
 	}
 }

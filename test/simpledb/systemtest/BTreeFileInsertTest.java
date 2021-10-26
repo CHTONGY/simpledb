@@ -211,14 +211,27 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 			DbFileIterator fit = bigFile.indexIterator(tid, ipred);
 			fit.open();
 			boolean found = false;
+			Tuple lastFound = null;
 			while(fit.hasNext()) {
-				if(fit.next().equals(t)) {
+				lastFound = fit.next();
+//				System.out.println("last found: " + lastFound);
+				if(lastFound.equals(t)) {
 					found = true;
 					break;
 				}
 			}
+//			boolean test = true;
+//			if(!found) {
+//				System.out.println("last found: " + lastFound);
+//				System.out.println("item: " + t);
+//				test = lastFound.equals(t);
+//			}
 			fit.close();
+			// debug
+
+//			System.out.println("start " + i);
 			assertTrue(found);
+//			System.out.println("end " + i);
 		}
 	}
 
@@ -245,7 +258,9 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		for(int i = 0; i < 100; i++) {
 			int item = rand.nextInt(BTreeUtility.MAX_RAND_VALUE);
 			Tuple t = BTreeUtility.getBTreeTuple(item, 2);
+//			System.out.println("start " + i);
 			Database.getBufferPool().insertTuple(tid, bigFile.getId(), t);
+//			System.out.println("finish " + i);
 
 			IndexPredicate ipred = new IndexPredicate(Op.EQUALS, t.getField(0));
 			DbFileIterator fit = bigFile.indexIterator(tid, ipred);

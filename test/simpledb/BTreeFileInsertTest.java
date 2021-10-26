@@ -64,7 +64,7 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		BTreeLeafPage otherPage;
 		if(page.getLeftSiblingId() != null) {
 			otherPage = (BTreeLeafPage) dirtypages.get(page.getLeftSiblingId());
-			assertTrue(field.compare(Op.GREATER_THAN_OR_EQ, 
+			assertTrue(field.compare(Op.GREATER_THAN_OR_EQ,
 					otherPage.reverseIterator().next().getField(keyField)));
 		}
 		else { // page.getRightSiblingId() != null
@@ -120,7 +120,7 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		}
 		else { // parentEntry.getRightChild().equals(page.getId())
 			otherPage = (BTreeInternalPage) dirtypages.get(parentEntry.getLeftChild());
-			assertTrue(field.compare(Op.GREATER_THAN_OR_EQ, 
+			assertTrue(field.compare(Op.GREATER_THAN_OR_EQ,
 					otherPage.reverseIterator().next().getKey()));
 		}
 		
@@ -128,7 +128,7 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		assertEquals(entriesPerPage - 1, totalEntries);
 		assertTrue(entriesPerPage/2 == page.getNumEntries() || 
 				entriesPerPage/2 - 1 == page.getNumEntries());
-		assertTrue(entriesPerPage/2 == otherPage.getNumEntries() || 
+		assertTrue(entriesPerPage/2 == otherPage.getNumEntries() ||
 				entriesPerPage/2 - 1 == otherPage.getNumEntries());
 	}    
 
@@ -168,7 +168,6 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		else { // page.getRightSiblingId() != null
 			otherPage = (BTreeLeafPage) dirtypages.get(page.getRightSiblingId());
 		}
-		
 		assertTrue(page.getId().pageNumber() == 2 || otherPage.getId().pageNumber() == 2);
 	}
 
