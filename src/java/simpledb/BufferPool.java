@@ -177,7 +177,12 @@ public class BufferPool {
             return frames[frameID].getPage();
         }
         // page not in buffer pool
-        int unpinnedFrameId = this.unpinnedFrames.get(0);   // always get the first unpinned frame id
+        int unpinnedFrameId = 0;
+        try {
+            unpinnedFrameId = this.unpinnedFrames.get(0);   // always get the first unpinned frame id
+        } catch (IndexOutOfBoundsException e) {
+            e.printStackTrace();
+        }
         Frame frame = this.frames[unpinnedFrameId];
 
         Page oldPage = frame.getPage();
@@ -261,6 +266,22 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> dirtyPages = file.insertTuple(tid, t);
+        // TODO: what should I do with these dirty pages?
+        for(Page dirtyPage : dirtyPages) {
+//            setFramePageDirty(tid, dirtyPage.getId());
+//            flushPage(dirtyPage.getId());
+            flushPage(dirtyPage);
+        }
+    }
+
+    private void setFramePageDirty(TransactionId tid, PageId pageId) {
+        if(this.pageIdFrameIdMap.containsKey(pageId)) {
+            int frameId = this.pageIdFrameIdMap.get(pageId);
+            Frame frame = this.frames[frameId];
+            frame.getPage().markDirty(true, tid);
+        }
     }
 
     /**
@@ -317,17 +338,25 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         // use pid to get table id -> find dbfile in catalog by tableid -> write dbfile
-        int frameId = this.pageIdFrameIdMap.get(pid);
-        Frame frame = this.frames[frameId];
+        if(this.pageIdFrameIdMap.containsKey(pid)) {
+            int frameId = this.pageIdFrameIdMap.get(pid);
+            Frame frame = this.frames[frameId];
 
-        Page dirtyPage = frame.page;
-        DbFile file = frame.file;
+            Page dirtyPage = frame.page;
+            DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
 
-        // page is dirty, then flush and set not dirty
-        if(dirtyPage.isDirty() != null) {
+            // page is dirty, then flush and set not dirty
+            if(dirtyPage.isDirty() != null) {
             file.writePage(dirtyPage);
             dirtyPage.markDirty(false, null);
+            }
         }
+    }
+
+    private synchronized void flushPage(Page page) throws IOException {
+            DbFile file = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
+            file.writePage(page);
+            page.markDirty(false, null);
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -375,6 +404,10 @@ public class BufferPool {
                 this.unpinnedFrames.add(frameId);
             }
         }
+    }
+
+    public void unpinPage(Page page) {
+        unpinPage(page.getId());
     }
 
 }
