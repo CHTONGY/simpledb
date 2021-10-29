@@ -312,6 +312,18 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        PageId pageId = t.getRecordId().getPageId();
+        if(this.pageIdFrameIdMap.containsKey(pageId)) {
+            int frameId = this.pageIdFrameIdMap.get(pageId);
+            Frame frame = this.frames[frameId];
+            Page dirtyPage = frame.getPage();
+            dirtyPage.markDirty(true, tid);
+            DbFile file = frame.getFile();
+            file.deleteTuple(tid, t);
+        } else {
+            DbFile file = Database.getCatalog().getDatabaseFile(pageId.getTableId());
+            file.deleteTuple(tid,t);
+        }
     }
 
     /**

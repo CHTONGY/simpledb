@@ -963,6 +963,27 @@ public class BTreeFile implements DbFile {
 		// the sibling pointers, and make the right page available for reuse.
 		// Delete the entry in the parent corresponding to the two pages that are merging -
 		// deleteParentEntry() will be useful here
+
+		// update dirtypages
+		dirtypages.put(leftPage.getId(),leftPage);
+		dirtypages.put(rightPage.getId(), rightPage);
+		dirtypages.put(parent.getId(),parent);
+		// move all tuples into left page
+		for(Iterator<Tuple> it = rightPage.iterator(); it.hasNext();) {
+			Tuple t = it.next();
+			rightPage.deleteTuple(t);
+			leftPage.insertTuple(t);
+		}
+		// update sibling
+		BTreePageId nextRightPageId = rightPage.getRightSiblingId();
+		leftPage.setRightSiblingId(nextRightPageId);
+		if(nextRightPageId != null) {
+			BTreeLeafPage nextRightPage = (BTreeLeafPage) getPage(tid, dirtypages, nextRightPageId, Permissions.READ_WRITE);
+			nextRightPage.setLeftSiblingId(leftPage.getId());
+		}
+		setEmptyPage(tid, dirtypages, rightPage.getId().pageNumber());
+		deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
+//		updateParentPointers(tid, dirtypages, parent);
 	}
 
 	/**
@@ -996,6 +1017,26 @@ public class BTreeFile implements DbFile {
 		// and make the right page available for reuse
 		// Delete the entry in the parent corresponding to the two pages that are merging -
 		// deleteParentEntry() will be useful here
+
+		// update dirty pages
+		dirtypages.put(leftPage.getId(), leftPage);
+		dirtypages.put(rightPage.getId(), rightPage);
+		dirtypages.put(parent.getId(), parent);
+		// pull down current parent key
+		BTreeEntry leftE = leftPage.reverseIterator().next();
+		BTreeEntry rightE = rightPage.iterator().next();
+		BTreeEntry pullDownEntry = new BTreeEntry(parentEntry.getKey(), leftE.getRightChild(), rightE.getLeftChild());
+		leftPage.insertEntry(pullDownEntry);
+		// move all entries from right page to left page
+		for(Iterator<BTreeEntry> it = rightPage.iterator(); it.hasNext();) {
+			BTreeEntry entry = it.next();
+			rightPage.deleteKeyAndLeftChild(entry);
+			leftPage.insertEntry(entry);
+		}
+		// update parent pointers
+		updateParentPointers(tid, dirtypages, leftPage);
+		deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
+		setEmptyPage(tid, dirtypages, rightPage.getId().pageNumber());
 	}
 	
 	/**
