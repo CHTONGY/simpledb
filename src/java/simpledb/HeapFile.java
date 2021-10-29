@@ -174,15 +174,15 @@ public class HeapFile implements DbFile {
             }
             if(this.curIter.hasNext()) {
                 Tuple t = this.curIter.next();
-                // after iterate the last tuple in the last page, we should unpin the last page
-                if(this.curIndex == this.pagesNum-1 && !this.curIter.hasNext()) {
-                    Database.getBufferPool().unpinPage(new HeapPageId(this.tableId, this.curIndex));
-                }
+//                // after iterate the last tuple in the last page, we should unpin the last page
+//                if(this.curIndex == this.pagesNum-1 && !this.curIter.hasNext()) {
+//                    Database.getBufferPool().unpinPage(new HeapPageId(this.tableId, this.curIndex));
+//                }
                 return t;
             }
             if(this.curIndex < this.pagesNum - 1) {
-                Database.getBufferPool().unpinPage(new HeapPageId(this.tableId, this.curIndex++));
-                HeapPage nxtPage = getPage(this.curIndex);
+//                Database.getBufferPool().unpinPage(new HeapPageId(this.tableId, this.curIndex++));
+                HeapPage nxtPage = getPage(++this.curIndex);
                 this.curIter = nxtPage.iterator();
                 return curIter.next();
             }

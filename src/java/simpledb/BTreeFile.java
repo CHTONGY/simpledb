@@ -201,31 +201,18 @@ public class BTreeFile implements DbFile {
 		BTreeLeafPage wantedPage = null;
 		// base case
 		if(pid.pgcateg() == BTreePageId.LEAF) {
-			if(dirtypages.containsKey(pid)) {
-				// first try to use dirty pages
-				return (BTreeLeafPage) dirtypages.get(pid);
-			}
 			wantedPage = (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
-			dirtypages.put(wantedPage.getId(), wantedPage);
-//			unpinPage(wantedPage);
 			return wantedPage;
 		}
 		// else, current page is BTreeInternalPage
 		// we should iterate over all BTreeEntry to find Field equals to f
-
-		BTreeInternalPage curPage = null;
-		if(dirtypages.containsKey(pid)) {
-			curPage = (BTreeInternalPage) dirtypages.get(pid);
-		} else {
-			curPage = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
-		}
+		BTreeInternalPage curPage = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
 
 		// handle f == null
 		if(f == null) {
 			// find the left most page
 			BTreePageId leftMostChildPID = curPage.getChildId(0);
-			unpinPage(curPage);
-			wantedPage = findLeafPage(tid, dirtypages, leftMostChildPID, perm, f);
+			wantedPage = findLeafPage(tid, dirtypages, leftMostChildPID, perm, null);
 			return wantedPage;
 		}
 
@@ -240,8 +227,6 @@ public class BTreeFile implements DbFile {
 			}
 		}
 
-		unpinPage(curPage);
-
 		if(curEntry.getKey().compare(Op.LESS_THAN, f)) {
 			// 1. if curEntry.f < f, then recurse curEntry.right
 			wantedPage = findLeafPage(tid, dirtypages, curEntry.getRightChild(), perm, f);
@@ -249,7 +234,6 @@ public class BTreeFile implements DbFile {
 			// 2. if curEntry.f >= f, then recurse curEntry.left
 			wantedPage = findLeafPage(tid, dirtypages, curEntry.getLeftChild(), perm, f);
 		}
-//		unpinPage(curPage);
 		return wantedPage;
 	}
 	
@@ -313,16 +297,13 @@ public class BTreeFile implements DbFile {
 		newPage.setLeftSiblingId(page.getId());
 		newPage.setRightSiblingId(rightPageId);
 		if(rightPageId != null) {
-			BTreeLeafPage rightPage = null;
-			if(dirtypages.containsKey(rightPageId)) {
-				rightPage = (BTreeLeafPage) dirtypages.get(rightPageId);
-			} else {
-				rightPage = (BTreeLeafPage) getPage(tid, dirtypages, rightPageId, Permissions.READ_WRITE);
-			}
+			BTreeLeafPage rightPage = (BTreeLeafPage) getPage(tid, dirtypages, rightPageId, Permissions.READ_WRITE);
 			rightPage.setLeftSiblingId(newPageId);
 			rightPage.markDirty(true,tid);
-			dirtypages.put(rightPageId, rightPage);
-			unpinPage(rightPage);
+			// when we use up right page, we cannot immediately unpin this page
+			// because this page maybe modify later.
+			// cannot have a page that is evicted from buffer pool but still in dirty pages.
+//			BufferPoolUtil.unpinPage(rightPage);
 		}
 
 		// mark old page and new page as dirty
@@ -367,13 +348,13 @@ public class BTreeFile implements DbFile {
 //		}
 		// update parent
 		parentPage.insertEntry(new BTreeEntry(key, page.getId(), newPageId));
-		updateParentPointers(tid, dirtypages, parentPage);
 		parentPage.markDirty(true, tid);
 		dirtypages.put(parentId, parentPage);
-		unpinPage(parentPage);
-		if(retPage.equals(newPage)) {
-			unpinPage(page);
-		}
+		updateParentPointers(tid, dirtypages, parentPage);
+//		BufferPoolUtil.unpinPage(parentPage);
+//		if(retPage.equals(newPage)) {
+//			BufferPoolUtil.unpinPage(page);
+//		}
         return retPage;
 	}
 
@@ -474,13 +455,13 @@ public class BTreeFile implements DbFile {
 //		}
 		// update parent
 		parentPage.insertEntry(new BTreeEntry(key, page.getId(), newPageId));
-		updateParentPointers(tid, dirtypages, parentPage);
 		parentPage.markDirty(true, tid);
 		dirtypages.put(parentId, parentPage);
-		unpinPage(parentPage);
-		if(retPage.equals(newPage)) {
-			unpinPage(page);
-		}
+		updateParentPointers(tid, dirtypages, parentPage);
+//		BufferPoolUtil.unpinPage(parentPage);
+//		if(retPage.equals(newPage)) {
+//			BufferPoolUtil.unpinPage(page);
+//		}
 
 		return retPage;
 	}
@@ -554,13 +535,11 @@ public class BTreeFile implements DbFile {
 		BTreePage p = (BTreePage) getPage(tid, dirtypages, child, Permissions.READ_ONLY);
 
 		if(!p.getParentId().equals(pid)) {
-			unpinPage(p);
 			p = (BTreePage) getPage(tid, dirtypages, child, Permissions.READ_WRITE);
 			p.setParentId(pid);
 		}
 
-		unpinPage(p);
-
+//		BufferPoolUtil.unpinPage(p);
 	}
 	
 	/**
@@ -1265,9 +1244,9 @@ public class BTreeFile implements DbFile {
 		return new BTreeFileIterator(this, tid);
 	}
 
-	private void unpinPage(Page page) {
-		Database.getBufferPool().unpinPage(page);
-	}
+//	private void unpinPage(Page page) {
+//		Database.getBufferPool().unpinPage(page);
+//	}
 
 }
 
@@ -1317,7 +1296,7 @@ class BTreeFileIterator extends AbstractDbFileIterator {
 		while (it == null && curp != null) {
 			BTreePageId nextp = curp.getRightSiblingId();
 			// TODO: before get the right siblings, first unpin current page
-			Database.getBufferPool().unpinPage(this.curp);
+//			Database.getBufferPool().unpinPage(this.curp);
 
 			if(nextp == null) {
 				curp = null;
@@ -1388,7 +1367,7 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 				tid, BTreeRootPtrPage.getId(f.getId()), Permissions.READ_ONLY);
 		BTreePageId root = rootPtr.getRootId();
 
-		PageUtil.unpinPage(rootPtr);
+		BufferPoolUtil.unpinPage(rootPtr);
 
 		if(ipred.getOp() == Op.EQUALS || ipred.getOp() == Op.GREATER_THAN 
 				|| ipred.getOp() == Op.GREATER_THAN_OR_EQ) {
@@ -1419,20 +1398,20 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 				else if(ipred.getOp() == Op.LESS_THAN || ipred.getOp() == Op.LESS_THAN_OR_EQ) {
 					// if the predicate was not satisfied and the operation is less than, we have
 					// hit the end
-					PageUtil.unpinPage(curp);
+//					BufferPoolUtil.unpinPage(curp);
 					return null;
 				}
 				else if(ipred.getOp() == Op.EQUALS && 
 						t.getField(f.keyField()).compare(Op.GREATER_THAN, ipred.getField())) {
 					// if the tuple is now greater than the field passed in and the operation
 					// is equals, we have reached the end
-					PageUtil.unpinPage(curp);
+//					BufferPoolUtil.unpinPage(curp);
 					return null;
 				}
 			}
 
 			BTreePageId nextp = curp.getRightSiblingId();
-			PageUtil.unpinPage(curp);
+			BufferPoolUtil.unpinPage(curp);
 			// if there are no more pages to the right, end the iteration
 			if(nextp == null) {
 				return null;
@@ -1443,7 +1422,7 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 				it = curp.iterator();
 			}
 		}
-		PageUtil.unpinPage(curp);
+//		BufferPoolUtil.unpinPage(curp);
 		return null;
 	}
 
@@ -1461,11 +1440,5 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 	public void close() {
 		super.close();
 		it = null;
-	}
-}
-
-class PageUtil {
-	public static void unpinPage(Page page) {
-		Database.getBufferPool().unpinPage(page);
 	}
 }
