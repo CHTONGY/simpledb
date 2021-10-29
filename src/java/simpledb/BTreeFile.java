@@ -760,6 +760,30 @@ public class BTreeFile implements DbFile {
         // Move some of the tuples from the sibling to the page so
 		// that the tuples are evenly distributed. Be sure to update
 		// the corresponding parent entry.
+
+		// delete tuple in sibling
+		int totalTuplesNum = page.getNumTuples() + sibling.getNumTuples();
+		while(page.getNumTuples() < totalTuplesNum / 2) {
+			Tuple movedTuple = null;
+			if (isRightSibling) {
+				movedTuple = sibling.iterator().next();
+			} else {
+				movedTuple = sibling.reverseIterator().next();
+			}
+			sibling.deleteTuple(movedTuple);
+			// insert tuple into current page
+			page.insertTuple(movedTuple);
+		}
+
+		// update parent entry key
+		Field newKey = null;
+		if(isRightSibling) {
+			newKey = sibling.iterator().next().getField(this.keyField);
+		} else {
+			newKey = page.iterator().next().getField(this.keyField);
+		}
+		entry.setKey(newKey);
+		parent.updateEntry(entry);
 	}
 
 	/**
@@ -836,6 +860,28 @@ public class BTreeFile implements DbFile {
 			BTreeInternalPage page, BTreeInternalPage leftSibling, BTreeInternalPage parent,
 			BTreeEntry parentEntry) throws DbException, IOException, TransactionAbortedException {
 		// some code goes here
+		// update dirtypages
+		dirtypages.put(page.getId(), page);
+		dirtypages.put(leftSibling.getId(), leftSibling);
+		dirtypages.put(parent.getId(), page);
+
+		int totalEntryNum = page.getNumEntries() + leftSibling.getNumEntries();
+		while(page.getNumEntries() < totalEntryNum / 2) {
+			// rotate key
+			BTreeEntry leftEntry = leftSibling.reverseIterator().next();
+			BTreeEntry curRightEntry = page.iterator().next();
+			BTreeEntry newRightEntry = new BTreeEntry(parentEntry.getKey(), leftEntry.getRightChild(), curRightEntry.getLeftChild());
+//			BTreeEntry newParentEntry = new BTreeEntry(leftEntry.getKey(), leftSibling.getId(), page.getId());
+			page.insertEntry(newRightEntry);
+//			parent.insertEntry(newParentEntry);
+			parentEntry.setKey(leftEntry.getKey());
+			parent.updateEntry(parentEntry);
+			leftSibling.deleteKeyAndRightChild(leftEntry);
+			// update parent
+			updateParentPointers(tid, dirtypages, page);
+			updateParentPointers(tid, dirtypages, leftSibling);
+			updateParentPointers(tid, dirtypages, parent);
+		}
 	}
 	
 	/**
@@ -864,6 +910,29 @@ public class BTreeFile implements DbFile {
 		// that the entries are evenly distributed. Be sure to update
 		// the corresponding parent entry. Be sure to update the parent
 		// pointers of all children in the entries that were moved.
+
+		// update dirtypages
+		dirtypages.put(page.getId(), page);
+		dirtypages.put(rightSibling.getId(), rightSibling);
+		dirtypages.put(parent.getId(), page);
+
+		int totalEntryNum = page.getNumEntries() + rightSibling.getNumEntries();
+		while(page.getNumEntries() < totalEntryNum / 2) {
+			// rotate key
+			BTreeEntry rightEntry = rightSibling.iterator().next();
+			BTreeEntry curLeftEntry = page.reverseIterator().next();
+			BTreeEntry newLeftEntry = new BTreeEntry(parentEntry.getKey(), curLeftEntry.getRightChild(), rightEntry.getLeftChild());
+//			BTreeEntry newParentEntry = new BTreeEntry(rightEntry.getKey(), page.getId(), rightSibling.getId());
+			page.insertEntry(newLeftEntry);
+//			parent.insertEntry(newParentEntry);
+			parentEntry.setKey(rightEntry.getKey());
+			parent.updateEntry(parentEntry);
+			rightSibling.deleteKeyAndLeftChild(rightEntry);
+			// update parent
+			updateParentPointers(tid, dirtypages, page);
+			updateParentPointers(tid, dirtypages, rightSibling);
+			updateParentPointers(tid, dirtypages, parent);
+		}
 	}
 	
 	/**
