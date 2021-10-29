@@ -331,7 +331,7 @@ public class BTreeFile implements DbFile {
 		Tuple firstTuple = newPage.iterator().next();
 		Field key = firstTuple.getField(this.keyField);
 		BTreeLeafPage retPage = newPage;
-		if(field.compare(Op.LESS_THAN, key)) {
+		if(field.compare(Op.LESS_THAN_OR_EQ, key)) {
 			// find in left part
 			retPage = page;
 		}
@@ -432,7 +432,7 @@ public class BTreeFile implements DbFile {
 		page.deleteKeyAndRightChild(putUpEntry);
 		Field key = putUpEntry.getKey();
 		BTreeInternalPage retPage = page;
-		if(field.compare(Op.GREATER_THAN_OR_EQ, key)) {
+		if(field.compare(Op.GREATER_THAN, key)) {
 			retPage = newPage;
 		}
 
