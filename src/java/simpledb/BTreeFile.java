@@ -539,7 +539,7 @@ public class BTreeFile implements DbFile {
 			p.setParentId(pid);
 		}
 
-//		BufferPoolUtil.unpinPage(p);
+		BufferPoolUtil.unpinPage(p);
 	}
 	
 	/**

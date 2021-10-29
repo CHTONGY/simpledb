@@ -280,7 +280,8 @@ public class BufferPool {
         List<Page> dirtyPages = file.insertTuple(tid, t);
         // TODO: what should I do with these dirty pages?
         for(Page dirtyPage : dirtyPages) {
-            flushPage(dirtyPage.getId());
+//            flushPage(dirtyPage.getId());
+            flushPage(dirtyPage);
 //            flushPage(dirtyPage);
             unpinPage(dirtyPage.getId());
         }
@@ -364,7 +365,7 @@ public class BufferPool {
             Frame frame = this.frames[frameId];
 
             Page dirtyPage = frame.page;
-//            DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+
             DbFile file = frame.file;
 
             // page is dirty, then flush and set not dirty
@@ -378,11 +379,15 @@ public class BufferPool {
 //        }
     }
 
-//    private synchronized void flushPage(Page page) throws IOException {
-//            DbFile file = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
-//            file.writePage(page);
-//            page.markDirty(false, null);
-//    }
+    private synchronized void flushPage(Page page) throws IOException {
+        if(this.pageIdFrameIdMap.containsKey(page.getId())) {
+            flushPage(page.getId());
+        } else {
+            DbFile file = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
+            file.writePage(page);
+            page.markDirty(false, null);
+        }
+    }
 
     /** Write all pages of the specified transaction to disk.
      */
