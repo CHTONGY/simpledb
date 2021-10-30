@@ -36,7 +36,7 @@ Then we remove all another page's entries and also parent entry.
 
 =====================================================================================
 2. Discuss and justify any changes you made to the API.
-No change to existed API. Add unpinPage() API in BufferPool.
+Add unpinPage() API in BufferPool to unpin page. No change to existed API.
 
 =====================================================================================
 3. Describe any missing or incomplete elements of your code.
