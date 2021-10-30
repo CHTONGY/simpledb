@@ -1,30 +1,57 @@
-CS660 Project Assignment XX Report
+CS660 Project Assignment 02 Report
 
 ######################################################################################################
 
-Name1: [Your full name]
-UID1: [UID]
+Name1: [Yan Tong]
+UID1: [U31059912]
 
-No Collaboration/
-Name2: [Your colloborator's full name]
-UID2: [UID]
+No Collaboration
 
 ######################################################################################################
 =====================================================================================
 1. Describe any design decisions you made. [Please refer to the lab website for detailed requirements here.]
 
+Page eviction: LRU. I use a LinkedList to store unpinned frames id.
+When a frame is needed, the frame id in the head of list is used.
+When a frame is unpinned, its id will insert into the tail of list.
+So every time we can get the least recently used frame id from the head of list.
+
+In the insertion, the key methods are splitLeafPage() and splitInternalPage().
+For splitLeafPage(), first we should update the sibling information.
+If the origin right sibling is not null, we should put it into dirtyPages map after modifying its left sibling.
+After we update the parent, we should also update the pointers of parent.
+For splitInternalPage(), we should immediately update pointers after moving entries into another page.
+Because we should "move up" (not "copy") an entry as parent, we should delete one entry after moving.
+Also we need to set the new parent entry's child pointers correctly, and update parent pointers.
+
+In the deletion, the key methods are stealLeafPage(), stealInternalPage(), mergeLeafPage(), mergeInternalPage().
+For stealLeafPage(), we should move enough tuples from another page.
+For stealInternalPage(), because we have "rotate" operation, we should update rotated entry's child pointers correctly.
+Also we need to update parent entry and parent pointers.
+For mergeLeafPage(), we should set empty pages after removing all tuples from rightPage and remove parent entry.
+For mergeInternalPage(), we cannot just remove the parent entry directly.
+We should first add the parent entry into the left page and update its child pointers.
+Then we remove all another page's entries and also parent entry.
+
+
 =====================================================================================
 2. Discuss and justify any changes you made to the API.
+No change to existed API. Add unpinPage() API in BufferPool.
 
 =====================================================================================
 3. Describe any missing or incomplete elements of your code.
+Maybe not.
 
 =====================================================================================
 4. Describe how long you spent on the assignment, and whether there was anything you found particularly difficult or confusing.
+I use 5 days on this assignment.
+It's really confusing for me even until now that the relationship between dirtyPages local cache and bufferpool.
+If all pages in diryPages have to be in the bufferpool, then why do we need dirtyPages local cache?
+If there could be inconsistency between dirtyPages and bufferpool, then how to flush those dirty pages that in the dirtyPages local cache but not in buffer pool?
 
 =====================================================================================
-5. If you collaborate with someone else, you have to discribe how you split the workload.
-
+5. If you collaborate with someone else, you have to describe how you split the workload.
+No collaboration.
 
 =====================================================================================
 ######################################################################################################

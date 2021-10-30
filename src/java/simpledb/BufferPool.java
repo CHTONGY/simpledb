@@ -168,12 +168,18 @@ public class BufferPool {
         throws TransactionAbortedException, DbException {
         // some code goes here
 //        rLock.lock();
-        //if contains page id
+        //if page is already in buffer pool, just return and pinCount +1
         if(this.pageIdFrameIdMap.containsKey(pid)) {
             int frameID = this.pageIdFrameIdMap.get(pid);
 
-            // update pinCount
-            frames[frameID].pinCountAddOne();
+            // update pinCount if perm is READ_WRITE
+            if(perm.equals(Permissions.READ_WRITE)) {
+                // if previous pin count is 0, then after adding we should remove this frame id from unpinned queue
+                if(frames[frameID].getPinCount() == 0) {
+                    this.unpinnedFrames.remove(Integer.valueOf(frameID));
+                }
+                frames[frameID].pinCountAddOne();
+            }
             return frames[frameID].getPage();
         }
         // page not in buffer pool
@@ -195,9 +201,13 @@ public class BufferPool {
         frame.pageId = pid;
         frame.page = p;
         frame.file = file;
-        frame.pinCountAddOne();
+        frame.setPinCount(1);
         this.pageIdFrameIdMap.put(pid, unpinnedFrameId);
         this.unpinnedFrames.remove(0);    // dequeue from unpinned frames list
+        // if it's a READ_ONLY perm, we do not need to hold its pin because we can evict it whenever we want
+        if(perm.equals(Permissions.READ_ONLY)) {
+            unpinPage(pid);
+        }
         //        rLock.unlock();
         return p;
     }
@@ -270,18 +280,19 @@ public class BufferPool {
         List<Page> dirtyPages = file.insertTuple(tid, t);
         // TODO: what should I do with these dirty pages?
         for(Page dirtyPage : dirtyPages) {
-//            setFramePageDirty(tid, dirtyPage.getId());
 //            flushPage(dirtyPage.getId());
             flushPage(dirtyPage);
+//            flushPage(dirtyPage);
+            unpinPage(dirtyPage.getId());
         }
-    }
-
-    private void setFramePageDirty(TransactionId tid, PageId pageId) {
-        if(this.pageIdFrameIdMap.containsKey(pageId)) {
-            int frameId = this.pageIdFrameIdMap.get(pageId);
-            Frame frame = this.frames[frameId];
-            frame.getPage().markDirty(true, tid);
-        }
+//        ListIterator<Page> iter = dirtyPages.listIterator();
+//        while (iter.hasNext()) {
+//            Page dirtyPage = iter.next();
+//            flushPage(dirtyPage.getId());
+//            unpinPage(dirtyPage);
+//            // after flush, should remove page from dirty pages cache
+//            iter.remove();
+//        }
     }
 
     /**
@@ -301,6 +312,18 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
+        PageId pageId = t.getRecordId().getPageId();
+        if(this.pageIdFrameIdMap.containsKey(pageId)) {
+            int frameId = this.pageIdFrameIdMap.get(pageId);
+            Frame frame = this.frames[frameId];
+            Page dirtyPage = frame.getPage();
+            dirtyPage.markDirty(true, tid);
+            DbFile file = frame.getFile();
+            file.deleteTuple(tid, t);
+        } else {
+            DbFile file = Database.getCatalog().getDatabaseFile(pageId.getTableId());
+            file.deleteTuple(tid,t);
+        }
     }
 
     /**
@@ -327,7 +350,18 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         // not necessary for lab1
-
+        if(this.pageIdFrameIdMap.containsKey(pid)) {
+            int frameId = this.pageIdFrameIdMap.get(pid);
+            Frame frame = this.frames[frameId];
+            frame.file = null;
+            frame.page = null;
+            frame.pageId = null;
+            if(frame.getPinCount() != 0) {
+                frame.setPinCount(0);
+                this.unpinnedFrames.add(frameId);
+            }
+            this.pageIdFrameIdMap.remove(pid);
+        }
     }
 
     /**
@@ -343,20 +377,28 @@ public class BufferPool {
             Frame frame = this.frames[frameId];
 
             Page dirtyPage = frame.page;
-            DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+
+            DbFile file = frame.file;
 
             // page is dirty, then flush and set not dirty
             if(dirtyPage.isDirty() != null) {
-            file.writePage(dirtyPage);
-            dirtyPage.markDirty(false, null);
+                file.writePage(dirtyPage);
+                dirtyPage.markDirty(false, null);
             }
         }
+//        else {
+//            System.out.println("current dirty page not in buffer pool!");
+//        }
     }
 
     private synchronized void flushPage(Page page) throws IOException {
+        if(this.pageIdFrameIdMap.containsKey(page.getId())) {
+            flushPage(page.getId());
+        } else {
             DbFile file = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
             file.writePage(page);
             page.markDirty(false, null);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -394,7 +436,7 @@ public class BufferPool {
         frame.file = null;
     }
 
-    /** unpin a page when requestor has fulfilled the page*/
+    /** unpin a page when requestor has fulfilled the page */
     public void unpinPage(PageId pageId) {
         if(this.pageIdFrameIdMap.containsKey(pageId)) {
             int frameId = this.pageIdFrameIdMap.get(pageId);
@@ -410,4 +452,14 @@ public class BufferPool {
         unpinPage(page.getId());
     }
 
+}
+
+class BufferPoolUtil {
+    public static void unpinPage(PageId pageId) {
+        Database.getBufferPool().unpinPage(pageId);
+    }
+
+    public static void unpinPage(Page page) {
+        Database.getBufferPool().unpinPage(page);
+    }
 }

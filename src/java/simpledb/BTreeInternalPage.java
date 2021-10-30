@@ -513,6 +513,20 @@ public class BTreeInternalPage extends BTreePage {
 		}
 
 		if(lessOrEqKey == -1) {
+			// debug
+			for (Iterator<BTreeEntry> it = this.iterator(); it.hasNext(); ) {
+				BTreeEntry entry = it.next();
+				System.out.print(" ");
+				System.out.print(entry.getKey());
+			}
+			System.out.println();
+//			int count = 0;
+			for (int i=0; i<numSlots; i++) {
+				if(isSlotUsed(i)) {
+					System.out.print(children[i]);
+					System.out.print(" ");
+				}
+			}
 			throw new DbException("attempt to insert invalid entry with left child " + 
 					e.getLeftChild().pageNumber() + ", right child " + 
 					e.getRightChild().pageNumber() + " and key " + e.getKey() +
