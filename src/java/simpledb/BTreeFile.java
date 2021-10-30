@@ -410,8 +410,8 @@ public class BTreeFile implements DbFile {
 		List<BTreeEntry> deletedEntries = new ArrayList<>(halfSize);
 		for(int i = 0; i < halfSize; i++) {
 			BTreeEntry entry = reverseIt.next();
-			deletedEntries.add(entry);
 			page.deleteKeyAndRightChild(entry);
+			deletedEntries.add(entry);
 		}
 
 		// add deleted entries into new page
