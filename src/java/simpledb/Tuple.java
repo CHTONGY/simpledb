@@ -112,6 +112,9 @@ public class Tuple implements Serializable {
             }
             sb.append("\t");
         }
+        if(sb.length() == 0) {
+            return sb.toString();
+        }
         sb.deleteCharAt(sb.length() - 1);   // remove the last \t
         return sb.toString();
 //        throw new UnsupportedOperationException("Implement this");

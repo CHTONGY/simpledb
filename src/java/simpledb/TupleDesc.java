@@ -65,6 +65,7 @@ public class TupleDesc implements Serializable {
         this.items = new ArrayList<>(typeAr.length);
         for(int i = 0; i < typeAr.length; i++) {
             String fieldName = fieldAr[i] == null ? "null" : fieldAr[i];
+//            String fieldName = fieldAr[i] == null ? "" : fieldAr[i];
             TDItem item = new TDItem(typeAr[i], fieldName);
             this.items.add(item);
         }
@@ -82,7 +83,8 @@ public class TupleDesc implements Serializable {
         // some code goes here
         this.items = new ArrayList<>(typeAr.length);
         for(Type type : typeAr) {
-            this.items.add(new TDItem(type, null));
+//            this.items.add(new TDItem(type, null));
+            this.items.add(new TDItem(type, ""));
         }
     }
 
@@ -221,10 +223,47 @@ public class TupleDesc implements Serializable {
         return true;
     }
 
+    /**
+     * Returns a hash code value for the object. This method is
+     * supported for the benefit of hash tables such as those provided by
+     * {@link HashMap}.
+     * <p>
+     * The general contract of {@code hashCode} is:
+     * <ul>
+     * <li>Whenever it is invoked on the same object more than once during
+     *     an execution of a Java application, the {@code hashCode} method
+     *     must consistently return the same integer, provided no information
+     *     used in {@code equals} comparisons on the object is modified.
+     *     This integer need not remain consistent from one execution of an
+     *     application to another execution of the same application.
+     * <li>If two objects are equal according to the {@code equals(Object)}
+     *     method, then calling the {@code hashCode} method on each of
+     *     the two objects must produce the same integer result.
+     * <li>It is <em>not</em> required that if two objects are unequal
+     *     according to the {@link Object#equals(Object)}
+     *     method, then calling the {@code hashCode} method on each of the
+     *     two objects must produce distinct integer results.  However, the
+     *     programmer should be aware that producing distinct integer results
+     *     for unequal objects may improve the performance of hash tables.
+     * </ul>
+     * <p>
+     * As much as is reasonably practical, the hashCode method defined by
+     * class {@code Object} does return distinct integers for distinct
+     * objects. (This is typically implemented by converting the internal
+     * address of the object into an integer, but this implementation
+     * technique is not required by the
+     * Java&trade; programming language.)
+     *
+     * @return a hash code value for this object.
+     * @see Object#equals(Object)
+     * @see System#identityHashCode
+     */
+
     public int hashCode() {
-        // If you want to use TupleDesc as keys for HashMap, implement this so
-        // that equal objects have equals hashCode() results
-        throw new UnsupportedOperationException("unimplemented");
+    // If you want to use TupleDesc as keys for HashMap, implement this so
+    // that equal objects have equals hashCode() results
+//        throw new UnsupportedOperationException("unimplemented");
+        return super.hashCode();
     }
 
     /**
