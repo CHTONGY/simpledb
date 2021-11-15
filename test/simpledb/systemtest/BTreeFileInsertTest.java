@@ -205,7 +205,9 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		for(int i = 0; i < 100; i++) {
 			int item = rand.nextInt(BTreeUtility.MAX_RAND_VALUE);
 			Tuple t = BTreeUtility.getBTreeTuple(item, 2);
+//						System.out.println("start " + i);
 			Database.getBufferPool().insertTuple(tid, bigFile.getId(), t);
+//						System.out.println("end " + i);
 
 			IndexPredicate ipred = new IndexPredicate(Op.EQUALS, t.getField(0));
 			DbFileIterator fit = bigFile.indexIterator(tid, ipred);
