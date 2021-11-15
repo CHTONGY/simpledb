@@ -106,56 +106,24 @@ public class SeqScan implements DbIterator {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        List<TupleDesc> newTupleDesc = new ArrayList<>();
-        StringBuilder sb;
-        try {
-            this.innerIterator.open();
-            while(this.innerIterator.hasNext()) {
-                Tuple curTuple = this.innerIterator.next();
-                TupleDesc curTD = curTuple.getTupleDesc();
-                Iterator<TupleDesc.TDItem> tdItemIterator = curTD.iterator();
+        TupleDesc oriTd = dbFile.getTupleDesc();
+        int fieldNum = oriTd.numFields();
 
-                List<Type> tdTypeAr = new ArrayList<>();
-                List<String> fieldNameAr = new ArrayList<>();
-                while(tdItemIterator.hasNext()) {
-                    TupleDesc.TDItem item = tdItemIterator.next();
-                    sb = new StringBuilder();
-                    if(!this.tableAlias.equals("")) {
-                        sb.append(this.tableAlias).append(".");
-                    }
-                    String newFieldName = sb.append(item.fieldName).toString();
-                    tdTypeAr.add(item.fieldType);
-                    fieldNameAr.add(newFieldName);
-                }
-                newTupleDesc.add(new TupleDesc(transferList2Arr(tdTypeAr), transferList2Arr(fieldNameAr)));
+        Type[] newTs = new Type[fieldNum];
+        String[] newAs = new String[fieldNum];
+
+        for(int i = 0; i < fieldNum; i++) {
+            Type t = oriTd.getFieldType(i);
+            String arr = oriTd.getFieldName(i);
+            if(tableAlias != null || tableAlias != "") {
+                arr = tableAlias + "." + arr;
             }
-            return mergeAllTupleDesc(newTupleDesc);
-        } catch (Exception e) {
-            e.printStackTrace();
+            newTs[i] = t;
+            newAs[i] = arr;
         }
-        return null;
+
+        return new TupleDesc(newTs, newAs);
     }
-
-    private <T> T[] transferList2Arr(List<T> list) {
-        T[] arr = (T[]) new Object[list.size()];
-        for(int i = 0; i < list.size(); i++) {
-            arr[i] = list.get(i);
-        }
-        return arr;
-    }
-
-
-    private TupleDesc mergeAllTupleDesc(List<TupleDesc> list) {
-        if(list == null || list.isEmpty()) {
-            return null;
-        }
-        TupleDesc td = list.get(0);
-        for(int i = 1; i < list.size(); i++) {
-            td = TupleDesc.merge(td, list.get(i));
-        }
-        return td;
-    }
-
 
     public boolean hasNext() throws TransactionAbortedException, DbException {
         // some code goes here
