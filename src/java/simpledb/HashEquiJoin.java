@@ -9,6 +9,12 @@ public class HashEquiJoin extends Operator {
 
     private static final long serialVersionUID = 1L;
 
+    private JoinPredicate p;
+    private DbIterator[] children;
+
+    private Tuple joinT1;
+    private Tuple joinT2;
+
     /**
      * Constructor. Accepts to children to join and the predicate to join them
      * on
@@ -22,41 +28,55 @@ public class HashEquiJoin extends Operator {
      */
     public HashEquiJoin(JoinPredicate p, DbIterator child1, DbIterator child2) {
         // some code goes here
+        this.p = p;
+        this.children = new DbIterator[]{child1, child2};
     }
 
     public JoinPredicate getJoinPredicate() {
         // some code goes here
-        return null;
+        return this.p;
     }
 
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return TupleDesc.merge(children[0].getTupleDesc(), children[1].getTupleDesc());
     }
     
     public String getJoinField1Name()
     {
         // some code goes here
-	return null;
+	    return children[0].getTupleDesc().getFieldName(p.getField1());
     }
 
     public String getJoinField2Name()
     {
         // some code goes here
-        return null;
+        return children[1].getTupleDesc().getFieldName(p.getField2());
     }
     
     public void open() throws DbException, NoSuchElementException,
             TransactionAbortedException {
         // some code goes here
+        super.open();
+        for(DbIterator child : children) {
+            child.open();
+        }
     }
 
     public void close() {
         // some code goes here
+        super.close();
+        for(DbIterator child : children) {
+            child.close();
+        }
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+        for(DbIterator child : children) {
+            child.rewind();
+        }
+        listIt = null;
     }
 
     transient Iterator<Tuple> listIt = null;
@@ -81,18 +101,59 @@ public class HashEquiJoin extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
+        if(listIt == null) {
+            Map<Field, List<Tuple>> t1Map = new HashMap<>();
+//            List<Tuple> t1List = new ArrayList<>();
+//            List<Tuple> t2List = new ArrayList<>();
+            List<Tuple> tList = new ArrayList<>();
+            while (children[0].hasNext()) {
+                Tuple t = children[0].next();
+                Field key = t.getField(p.getField1());
+                if(!t1Map.containsKey(key)) {
+                    t1Map.put(key, new ArrayList<>());
+                }
+                t1Map.get(key).add(t);
+            }
+            while (children[1].hasNext()) {
+                Tuple t = children[1].next();
+                Field key = t.getField(p.getField2());
+                if(t1Map.containsKey(key)) {
+                    for(Tuple t2 : t1Map.get(key)) {
+                        Tuple newT = mergeTuple(t2, t);
+                        tList.add(newT);
+                    }
+                }
+            }
+            listIt = tList.iterator();
+        }
+        if(listIt.hasNext()) {
+            return listIt.next();
+        }
         return null;
+    }
+
+    private Tuple mergeTuple(Tuple t1, Tuple t2) {
+        Tuple t = new Tuple(TupleDesc.merge(t1.getTupleDesc(), t2.getTupleDesc()));
+        int index = 0;
+        for(Iterator<Field> it = t1.fields(); it.hasNext();) {
+            t.setField(index++, it.next());
+        }
+        for(Iterator<Field> it = t2.fields(); it.hasNext();) {
+            t.setField(index++, it.next());
+        }
+        return t;
     }
 
     @Override
     public DbIterator[] getChildren() {
         // some code goes here
-        return null;
+        return this.children;
     }
 
     @Override
     public void setChildren(DbIterator[] children) {
         // some code goes here
+        this.children = children;
     }
     
 }
