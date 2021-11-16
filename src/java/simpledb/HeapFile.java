@@ -115,7 +115,33 @@ public class HeapFile implements DbFile {
     public ArrayList<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
         // some code goes here
-        return null;
+        ArrayList<Page> dirtyPage = new ArrayList<>();
+        boolean hasEmptyPage = false;
+        // to see whether there is any existing page has empty slot
+        for(int i = 0; i < pagesNum; i++) {
+            PageId pageId = new HeapPageId(getId(), i);
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId,Permissions.READ_ONLY);
+            if(page.getNumEmptySlots() > 0) {
+                hasEmptyPage = true;
+                page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+                page.insertTuple(t);
+                BufferPoolUtil.unpinPage(pageId);
+                dirtyPage.add(page);
+                break;
+            }
+        }
+
+        // no empty space, create a new page
+        if(!hasEmptyPage) {
+            HeapPageId pageId = new HeapPageId(getId(), this.pagesNum++);
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId,Permissions.READ_WRITE);
+//            HeapPage page = new HeapPage(pageId, HeapPage.createEmptyPageData());
+            page.insertTuple(t);
+            BufferPoolUtil.unpinPage(pageId);
+            dirtyPage.add(page);
+        }
+
+        return dirtyPage;
         // not necessary for lab1
     }
 
@@ -123,7 +149,13 @@ public class HeapFile implements DbFile {
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
         // some code goes here
-        return null;
+        ArrayList<Page> dirtyPages = new ArrayList<>();
+        PageId pageId = t.getRecordId().getPageId();
+        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+        page.deleteTuple(t);
+        dirtyPages.add(page);
+        BufferPoolUtil.unpinPage(pageId);
+        return dirtyPages;
         // not necessary for lab1
     }
 
@@ -164,7 +196,19 @@ public class HeapFile implements DbFile {
             if(!this.isOpen) {
                 return false;
             }
-            return this.curIter.hasNext() || (this.curIndex < this.pagesNum - 1);
+            if(this.curIter.hasNext()) {
+                return true;
+            }
+            while (this.curIndex < this.pagesNum - 1) {
+//                Database.getBufferPool().unpinPage(new HeapPageId(this.tableId, this.curIndex++));
+                HeapPage nxtPage = getPage(++this.curIndex);
+                this.curIter = nxtPage.iterator();
+                if(this.curIter.hasNext()) {
+                    return true;
+                }
+            }
+            return false;
+//            return this.curIter.hasNext() || (this.curIndex < this.pagesNum - 1);
         }
 
         @Override
@@ -180,13 +224,16 @@ public class HeapFile implements DbFile {
 //                }
                 return t;
             }
-            if(this.curIndex < this.pagesNum - 1) {
+            while (this.curIndex < this.pagesNum - 1) {
 //                Database.getBufferPool().unpinPage(new HeapPageId(this.tableId, this.curIndex++));
                 HeapPage nxtPage = getPage(++this.curIndex);
                 this.curIter = nxtPage.iterator();
-                return curIter.next();
+                if(this.curIter.hasNext()) {
+                    return curIter.next();
+                }
             }
             throw new NoSuchElementException("no more element for next");
+//            return null;
         }
 
         @Override

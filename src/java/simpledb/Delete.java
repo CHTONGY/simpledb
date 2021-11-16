@@ -10,6 +10,12 @@ public class Delete extends Operator {
 
     private static final long serialVersionUID = 1L;
 
+    private TransactionId tid;
+    private DbIterator[] children;
+    private TupleDesc td;
+
+    private boolean hasScan;
+
     /**
      * Constructor specifying the transaction that this delete belongs to as
      * well as the child to read from.
@@ -21,23 +27,38 @@ public class Delete extends Operator {
      */
     public Delete(TransactionId t, DbIterator child) {
         // some code goes here
+        this.tid = t;
+        this.children = new DbIterator[]{child};
+        this.td = new TupleDesc(new Type[]{Type.INT_TYPE});
     }
 
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return td;
     }
 
     public void open() throws DbException, TransactionAbortedException {
         // some code goes here
+        super.open();
+        for(DbIterator child : children) {
+            child.open();
+        }
     }
 
     public void close() {
         // some code goes here
+        super.close();
+        for(DbIterator child : children) {
+            child.close();
+        }
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+        for(DbIterator child : children) {
+            child.rewind();
+        }
+        hasScan = false;
     }
 
     /**
@@ -51,18 +72,37 @@ public class Delete extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        if(!hasScan) {
+            int count = 0;
+            for (DbIterator child : children) {
+                while (child.hasNext()) {
+                    try {
+                        Database.getBufferPool().deleteTuple(tid, child.next());
+                        count++;
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+            Tuple t = new Tuple(td);
+            t.setField(0, new IntField(count));
+            hasScan = true;
+            return t;
+        } else {
+            return null;
+        }
     }
 
     @Override
     public DbIterator[] getChildren() {
         // some code goes here
-        return null;
+        return children;
     }
 
     @Override
     public void setChildren(DbIterator[] children) {
         // some code goes here
+        this.children = children;
     }
 
 }
