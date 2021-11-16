@@ -19,6 +19,7 @@ public class HeapFile implements DbFile {
     private TupleDesc td;
     private int pagesNum;
     private int tableId;
+    private int pageSize;
 
     /**
      * Constructs a heap file backed by the specified file.
@@ -32,7 +33,7 @@ public class HeapFile implements DbFile {
         this.f = f;
         this.td = td;
         this.tableId = this.getId();
-        int pageSize = BufferPool.getPageSize();
+        pageSize = BufferPool.getPageSize();
         this.pagesNum = (int) Math.ceil(((double) this.f.length()) / pageSize);
         Database.getCatalog().addTable(this);
     }
@@ -101,6 +102,14 @@ public class HeapFile implements DbFile {
     public void writePage(Page page) throws IOException {
         // some code goes here
         // not necessary for lab1
+        int offset = page.getId().pageNumber();
+        RandomAccessFile raf = new RandomAccessFile(this.f, "rw");
+        int pageSize = BufferPool.getPageSize();
+        byte[] curContent = page.getPageData();;
+        // find the start point of current file
+        raf.seek(offset * pageSize);
+        raf.write(curContent, 0, pageSize);
+        raf.close();
     }
 
     /**
@@ -108,7 +117,7 @@ public class HeapFile implements DbFile {
      */
     public int numPages() {
         // some code goes here
-        return this.pagesNum;
+        return this.pagesNum = (int) Math.ceil(((double) this.f.length()) / pageSize);
     }
 
     // see DbFile.java for javadocs
@@ -133,12 +142,13 @@ public class HeapFile implements DbFile {
 
         // no empty space, create a new page
         if(!hasEmptyPage) {
-            HeapPageId pageId = new HeapPageId(getId(), this.pagesNum++);
-            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId,Permissions.READ_WRITE);
-//            HeapPage page = new HeapPage(pageId, HeapPage.createEmptyPageData());
+            HeapPageId pageId = new HeapPageId(getId(), pagesNum++);
+//            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId,Permissions.READ_WRITE);
+            HeapPage page = new HeapPage(pageId, HeapPage.createEmptyPageData());
             page.insertTuple(t);
-            BufferPoolUtil.unpinPage(pageId);
+//            BufferPoolUtil.unpinPage(pageId);
             dirtyPage.add(page);
+            writePage(page);
         }
 
         return dirtyPage;
