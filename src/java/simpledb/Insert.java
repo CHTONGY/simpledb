@@ -1,5 +1,7 @@
 package simpledb;
 
+import java.io.IOException;
+
 /**
  * Inserts tuples read from the child operator into the tableId specified in the
  * constructor
@@ -8,6 +10,12 @@ public class Insert extends Operator {
 
     private static final long serialVersionUID = 1L;
 
+    private TransactionId tid;
+    private DbIterator[] children;
+    private int tableId;
+    private TupleDesc td;
+
+    private boolean hasScan;
     /**
      * Constructor.
      *
@@ -24,23 +32,42 @@ public class Insert extends Operator {
     public Insert(TransactionId t,DbIterator child, int tableId)
             throws DbException {
         // some code goes here
+//        if(!Database.getCatalog().getDatabaseFile(tableId).getTupleDesc().equals(child.getTupleDesc())) {
+//            throw new DbException("TupleDesc of dbIterator differs from table into which we are to insert");
+//        }
+        this.tid = t;
+        this.children = new DbIterator[]{child};
+        this.tableId = tableId;
+        this.td = new TupleDesc(new Type[]{Type.INT_TYPE});
     }
 
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return td;
     }
 
     public void open() throws DbException, TransactionAbortedException {
         // some code goes here
+        super.open();
+        for(DbIterator child : children) {
+            child.open();
+        }
     }
 
     public void close() {
         // some code goes here
+        super.close();
+        for(DbIterator child : children) {
+            child.close();
+        }
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+        for(DbIterator child : children) {
+            child.rewind();
+        }
+        hasScan = false;
     }
 
     /**
@@ -58,17 +85,37 @@ public class Insert extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        if(!hasScan) {
+            int count = 0;
+            for (DbIterator child : children) {
+                while (child.hasNext()) {
+                    Tuple t = child.next();
+                    try {
+                        Database.getBufferPool().insertTuple(this.tid, this.tableId, t);
+                        count++;
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+            Tuple t = new Tuple(td);
+            t.setField(0, new IntField(count));
+            hasScan = true;
+            return t;
+        } else {
+            return null;
+        }
     }
 
     @Override
     public DbIterator[] getChildren() {
         // some code goes here
-        return null;
+        return children;
     }
 
     @Override
     public void setChildren(DbIterator[] children) {
         // some code goes here
+        this.children = children;
     }
 }
