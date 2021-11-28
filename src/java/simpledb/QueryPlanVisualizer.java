@@ -200,7 +200,7 @@ public class QueryPlanVisualizer {
                 Filter f = (Filter) plan;
                 Predicate p = f.getPredicate();
                 thisNode.text = String.format("%1$s(%2$s),card:%3$d", SELECT, children[0]
-                        .getTupleDesc().getFieldName(p.getField())
+                        .getTupleDesc().getFieldName(p.getFieldNum())
                         + p.getOp()
                         + p.getOperand(),f.getEstimatedCardinality());
                 int upBarShift = parentUpperBarStartShift;

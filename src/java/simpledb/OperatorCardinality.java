@@ -57,7 +57,7 @@ public class OperatorCardinality {
             Map<String, TableStats> tableStats) {
         DbIterator child = f.getChildren()[0];
         Predicate pred = f.getPredicate();
-        String[] tmp = child.getTupleDesc().getFieldName(pred.getField())
+        String[] tmp = child.getTupleDesc().getFieldName(pred.getFieldNum())
                 .split("[.]");
         String tableAlias = tmp[0];
         String pureFieldName = tmp[1];
