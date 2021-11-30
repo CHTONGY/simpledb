@@ -1,4 +1,4 @@
-CS660 Project Assignment 03 Report
+CS660 Project Assignment 04 Report
 
 ######################################################################################################
 
@@ -10,9 +10,7 @@ No Collaboration
 ######################################################################################################
 =====================================================================================
 1. Describe any design decisions you made. [Please refer to the lab website for detailed requirements here.]
-Other than nested-loops join, I implemented a hash join, which is also required by this PA.
-For the implementation of hash join, first I implemented the "hashCode()" method of TupleDesc.
-Then when doing hash, I used the TupleDesc as the key to be hashed.
+I just simply used the Nested Loop Join to implement the selectivity estimation and join estimation.
 
 =====================================================================================
 2. Discuss and justify any changes you made to the API.
@@ -24,8 +22,8 @@ Maybe not.
 
 =====================================================================================
 4. Describe how long you spent on the assignment, and whether there was anything you found particularly difficult or confusing.
-I use 1 day on this assignment.
-This assignment is clear for me. There is no particularly difficult or confusing part on this assignment.
+I spent 2 days on this assignment.
+The concept of "cardinality" confused me a little at first. But later I understood it.
 
 =====================================================================================
 5. If you collaborate with someone else, you have to describe how you split the workload.
@@ -33,4 +31,5 @@ No collaboration.
 
 =====================================================================================
 ######################################################################################################
+
 
